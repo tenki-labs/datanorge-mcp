@@ -1,0 +1,17 @@
+{
+  "name": "datanorge-mcp",
+  "owner": {
+    "name": "Tenki Labs",
+    "url": "https://github.com/tenki-labs"
+  },
+  "plugins": [
+    {
+      "name": "datanorge",
+      "source": "./",
+      "description": "Finn og hent norske offentlige data fra data.norge.no. MCP-server + /finn-datakilde-skill som leter iterativt i Felles datakatalog og alltid henter fram lisens- og krediteringskrav.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": ["data.norge.no", "fellesdatakatalog", "open-data", "norway", "mcp"]
+    }
+  ]
+}

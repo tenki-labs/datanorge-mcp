@@ -1,0 +1,56 @@
+{
+  "name": "@tenki-labs/datanorge-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for data.norge.no (Felles datakatalog): search and fetch Norwegian open data from Claude Code. No API key, near-zero setup.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Tenki Labs",
+  "homepage": "https://github.com/tenki-labs/datanorge-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tenki-labs/datanorge-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tenki-labs/datanorge-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "data.norge.no",
+    "fellesdatakatalog",
+    "fdk",
+    "open-data",
+    "norway",
+    "digdir"
+  ],
+  "bin": {
+    "datanorge-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "smoke": "node scripts/smoke.mjs",
+    "inspector": "npx -y @modelcontextprotocol/inspector node dist/index.js",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

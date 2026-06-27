@@ -1,0 +1,27 @@
+{
+  "name": "datanorge",
+  "description": "Finn og hent norske offentlige data fra data.norge.no, rett fra Claude Code. MCP-server + /finn-datakilde-skill som leter iterativt i Felles datakatalog og alltid henter fram lisens- og krediteringskrav.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tenki Labs",
+    "url": "https://github.com/tenki-labs"
+  },
+  "homepage": "https://github.com/tenki-labs/datanorge-mcp",
+  "repository": "https://github.com/tenki-labs/datanorge-mcp",
+  "license": "MIT",
+  "keywords": [
+    "data.norge.no",
+    "fellesdatakatalog",
+    "fdk",
+    "open-data",
+    "norway",
+    "mcp"
+  ],
+  "mcpServers": {
+    "datanorge": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "github:tenki-labs/datanorge-mcp"]
+    }
+  }
+}
