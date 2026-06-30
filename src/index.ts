@@ -11,14 +11,22 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import { search, getResource, fetchData, FdkError } from "./fdk.js";
+import {
+  search,
+  getResource,
+  fetchData,
+  looksLikeApiDocs,
+  resolveOpenApiSpec,
+  FdkError,
+} from "./fdk.js";
 import {
   formatSearchResults,
   formatDataset,
   formatDataService,
+  formatApiSpec,
 } from "./format.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 
 const server = new McpServer({
   name: "datanorge",
@@ -180,7 +188,8 @@ server.registerTool(
       "Download the actual data from a distribution's downloadURL or accessURL (from get_dataset), an API " +
       "endpoint (from get_api), or any http(s) data URL. Returns the content for text formats (CSV, JSON, XML, " +
       "GeoJSON); large responses are truncated and binary content returns metadata only. " +
-      "Use this to retrieve the data itself, not just its catalogue metadata.",
+      "Use this to retrieve the data itself, not just its catalogue metadata. " +
+      "If the URL is a Swagger/OpenAPI docs page, it auto-resolves the spec and returns the real endpoints.",
     inputSchema: {
       url: z
         .string()
@@ -199,6 +208,18 @@ server.registerTool(
     try {
       const cap = Math.min((maxKilobytes ?? 256) * 1024, 5000 * 1024);
       const data = await fetchData(url, cap);
+      // If this is a Swagger/OpenAPI docs page, resolve the spec so the caller
+      // gets the real endpoints instead of guessing paths (issue #1).
+      if (data.isText && looksLikeApiDocs(data.contentType, data.body)) {
+        const spec = await resolveOpenApiSpec(data.url, data.body!);
+        if (spec && spec.endpoints.length) return ok(formatApiSpec(data.url, spec));
+        const origin = new URL(data.url).origin;
+        return ok(
+          `Fetched ${data.url} — this looks like an API docs (Swagger/OpenAPI) page, but the spec ` +
+            `couldn't be auto-resolved. Try: ${origin}/swagger/v1/swagger.json, ${origin}/openapi.json, ` +
+            `or ${origin}/v3/api-docs.`,
+        );
+      }
       const header =
         `Fetched ${data.url}\n` +
         `status ${data.status} · ${data.contentType} · ${data.byteLength} bytes` +

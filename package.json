@@ -1,6 +1,6 @@
 {
   "name": "@tenki-labs/datanorge-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for data.norge.no (Felles datakatalog): search and fetch Norwegian open data from Claude Code. No API key, near-zero setup.",
   "type": "module",
   "license": "MIT",

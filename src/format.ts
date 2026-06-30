@@ -4,7 +4,7 @@
  * links and labels it needs to act, without drowning in metadata.
  */
 
-import type { LangString, SearchResponse } from "./fdk.js";
+import type { LangString, SearchResponse, OpenApiSpecResult } from "./fdk.js";
 
 /** Pick the best available language for a localized label (Norwegian first). */
 export function pickLang(label?: LangString | null): string {
@@ -299,5 +299,32 @@ export function formatDataService(d: Record<string, any>): string {
 
   lines.push("");
   lines.push("To call the API, pass an endpoint URL above to fetch_data (add query params as needed).");
+  return lines.join("\n");
+}
+
+/** Format an auto-resolved OpenAPI spec as a readable endpoint list. */
+export function formatApiSpec(pageUrl: string, spec: OpenApiSpecResult): string {
+  const lines: string[] = [];
+  lines.push(`${pageUrl} is an API documentation page — resolved the OpenAPI spec automatically.`);
+  lines.push(`spec: ${spec.specUrl}`);
+  const meta = [spec.title, spec.version].filter(Boolean).join(" · ");
+  if (meta) lines.push(`API: ${meta}`);
+  lines.push("");
+  lines.push(`Endpoints (${spec.endpoints.length}):`);
+  for (const e of spec.endpoints.slice(0, 60)) {
+    const sum = e.summary ? `  — ${truncate(e.summary, 90)}` : "";
+    lines.push(`  ${e.method.padEnd(4)} ${e.path}${sum}`);
+  }
+  if (spec.endpoints.length > 60) {
+    lines.push(`  … and ${spec.endpoints.length - 60} more`);
+  }
+  const origin = new URL(spec.specUrl).origin;
+  const sample = spec.endpoints.find((e) => !e.path.includes("{")) ?? spec.endpoints[0];
+  lines.push("");
+  if (sample) {
+    lines.push(
+      `Call one by passing its full URL to fetch_data, e.g. ${origin}${sample.path} (fill in any {parameters}).`,
+    );
+  }
   return lines.join("\n");
 }

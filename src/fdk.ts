@@ -269,3 +269,176 @@ export async function fetchData(
   if (isText) result.body = buf.toString("utf8");
   return result;
 }
+
+// ─── OpenAPI / Swagger docs auto-resolution (issue #1) ───────────────────────
+
+export interface OpenApiEndpoint {
+  method: string;
+  path: string;
+  summary?: string;
+}
+
+export interface OpenApiSpecResult {
+  specUrl: string;
+  title?: string;
+  version?: string;
+  endpoints: OpenApiEndpoint[];
+}
+
+const API_DOCS_MARKERS =
+  /swagger-ui|swagger-ui-bundle|swagger-ui-init|redoc|rapidoc|<title>\s*swagger|swagger\.json|\/api-docs|openapi\.json/i;
+
+/** True if the response looks like a Swagger UI / OpenAPI docs HTML page. */
+export function looksLikeApiDocs(contentType: string, body: string | undefined): boolean {
+  if (!body) return false;
+  const isHtml = /html/i.test(contentType) || /<!doctype html|<html[\s>]/i.test(body);
+  if (!isHtml) return false;
+  return API_DOCS_MARKERS.test(body);
+}
+
+const COMMON_SPEC_PATHS = [
+  "/swagger/v1/swagger.json",
+  "/swagger/v1-public/swagger.json",
+  "/openapi.json",
+  "/openapi/v1.json",
+  "/v3/api-docs",
+  "/v2/api-docs",
+  "/api-docs",
+  "/swagger.json",
+  "/swagger/doc.json",
+];
+
+/** Pull candidate spec/script URLs out of an HTML or JS blob. */
+function extractRefs(text: string): string[] {
+  const out: string[] = [];
+  const patterns = [
+    /spec-?url\s*[=:]\s*["']([^"']+)["']/gi,
+    /["']?configUrl["']?\s*:\s*["']([^"']+)["']/gi,
+    /urls\s*:\s*\[\s*\{[^}]*["']url["']\s*:\s*["']([^"']+)["']/gi,
+    /["']?url["']?\s*:\s*["']([^"']+\.(?:json|ya?ml)(?:[?#][^"']*)?)["']/gi,
+    /["']?url["']?\s*:\s*["']([^"']*(?:api-docs|\/swagger\/|openapi)[^"']*)["']/gi,
+    /["']([^"']*\/(?:swagger|openapi|api-docs|v3\/api-docs)[^"']*\.(?:json|ya?ml))["']/gi,
+    /(?:src|href)\s*=\s*["']([^"']*(?:swagger-ui-init|index)\.js(?:[?#][^"']*)?)["']/gi,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      if (m[1]) out.push(m[1]);
+    }
+  }
+  return out;
+}
+
+function isOpenApiSpec(obj: any): boolean {
+  return (
+    !!obj &&
+    typeof obj === "object" &&
+    (obj.openapi || obj.swagger) &&
+    obj.paths &&
+    typeof obj.paths === "object"
+  );
+}
+
+function endpointsFromSpec(spec: any): OpenApiEndpoint[] {
+  const eps: OpenApiEndpoint[] = [];
+  const paths = spec.paths || {};
+  for (const p of Object.keys(paths)) {
+    const ops = paths[p];
+    if (!ops || typeof ops !== "object") continue;
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      const op = ops[method];
+      if (op) {
+        const raw = (op.summary || op.description || "").toString();
+        const summary = raw.split("\n")[0].trim();
+        eps.push({ method: method.toUpperCase(), path: p, summary: summary || undefined });
+      }
+    }
+  }
+  return eps;
+}
+
+async function fetchTextCapped(url: string): Promise<string | null> {
+  try {
+    const res = await fdkFetch(url, {
+      headers: { Accept: "application/json, application/yaml, */*" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const len = Number(res.headers.get("content-length"));
+    if (Number.isFinite(len) && len > 8_000_000) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Given the URL + HTML of a Swagger/OpenAPI docs page, locate and parse the real
+ * OpenAPI spec and return its endpoint list. Returns null if nothing resolves.
+ * Reads the spec URL from the page's init script and/or probes common paths.
+ */
+export async function resolveOpenApiSpec(
+  pageUrl: string,
+  html: string,
+): Promise<OpenApiSpecResult | null> {
+  const origin = new URL(pageUrl).origin;
+  const seen = new Set<string>();
+  const specCandidates: string[] = [];
+  const abs = (u: string): string | null => {
+    try {
+      return new URL(u, pageUrl).href;
+    } catch {
+      return null;
+    }
+  };
+
+  // 1) refs in the page HTML — separate init scripts from direct spec URLs
+  const initScripts: string[] = [];
+  for (const ref of extractRefs(html)) {
+    const a = abs(ref);
+    if (!a) continue;
+    if (/(swagger-ui-init|index)\.js(?:[?#]|$)/i.test(a)) initScripts.push(a);
+    else specCandidates.push(a);
+  }
+  if (!initScripts.length) {
+    const a = abs("./swagger-ui-init.js") ?? abs("./index.js");
+    if (a) initScripts.push(a);
+  }
+  // 2) extract spec URLs from the init scripts
+  for (const js of initScripts.slice(0, 3)) {
+    const txt = await fetchTextCapped(js);
+    if (!txt) continue;
+    for (const ref of extractRefs(txt)) {
+      if (/(swagger-ui-init|index)\.js(?:[?#]|$)/i.test(ref)) continue;
+      const a = abs(ref);
+      if (a) specCandidates.push(a);
+    }
+  }
+  // 3) common probe paths at the host root
+  for (const p of COMMON_SPEC_PATHS) specCandidates.push(`${origin}${p}`);
+
+  // try candidates (cap total attempts), return first valid OpenAPI spec
+  let attempts = 0;
+  for (const url of specCandidates) {
+    if (seen.has(url) || attempts >= 14) continue;
+    seen.add(url);
+    attempts++;
+    const txt = await fetchTextCapped(url);
+    if (!txt) continue;
+    let obj: any;
+    try {
+      obj = JSON.parse(txt);
+    } catch {
+      continue;
+    }
+    if (isOpenApiSpec(obj)) {
+      return {
+        specUrl: url,
+        title: obj.info?.title,
+        version: obj.info?.version,
+        endpoints: endpointsFromSpec(obj),
+      };
+    }
+  }
+  return null;
+}
